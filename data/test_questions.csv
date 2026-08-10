@@ -1,0 +1,21 @@
+question_id,question,answer_present_in_documents,likely_source_document
+Q001,When should the district control room be activated?,Yes,district_incident_response_protocol.md
+Q002,What should be done before monsoon to reduce flood risk?,Yes,flood_sop.md
+Q003,Who are the priority groups during a heatwave?,Yes,heatwave_action_plan.md
+Q004,What should a cyclone shelter contain?,Yes,cyclone_preparedness_sop.md
+Q005,What information should every public warning include?,Yes,risk_communication_checklist.md
+Q006,When can a relief shelter be closed?,Yes,relief_shelter_management_guidelines.md
+Q007,What is the exact compensation amount for damaged crops?,No,
+Q008,Which private telecom vendor should be used for emergency alerts?,No,
+Q009,What factors should be used for resource prioritization?,Yes,district_incident_response_protocol.md
+Q010,What actions are required during an Orange or Red heat alert?,Yes,heatwave_action_plan.md
+Q011,What should fishermen do during a cyclone warning?,Yes,cyclone_preparedness_sop.md
+Q012,What is the mayor's personal phone number?,No,
+Q013,What records should shelter managers maintain?,Yes,relief_shelter_management_guidelines.md
+Q014,How should rumours be controlled?,Yes,risk_communication_checklist.md
+Q015,What are the evacuation triggers for floods?,Yes,flood_sop.md
+Q016,Which satellite model is approved for landslide prediction?,No,
+Q017,What should be logged for major decisions?,Yes,district_incident_response_protocol.md
+Q018,What low-cost measures reduce heat stress?,Yes,heatwave_action_plan.md
+Q019,What is the flood return period of Nirmala river?,No,
+Q020,What should initial cyclone damage reports separate?,Yes,cyclone_preparedness_sop.md
