@@ -70,6 +70,11 @@ class QueryResponse(BaseModel):
     generatedAt: str = ""
     processingTimeMs: int = 0
     hallucinationRisk: str = "Zero"
+    # Live telemetry made available to the frontend
+    retrievedDocsCount: int = 0
+    indexedChunksCount: int = 0
+    tokensProcessed: int = 0
+    rerankModel: str = ""
 
 class HealthResponse(BaseModel):
     status: str
@@ -85,6 +90,7 @@ class RebuildResponse(BaseModel):
 retriever: Any = None
 bm25_retriever: Any = None
 chunks_cache: List[Any] = []
+reranker: Any = None  # cross-encoder reranker, loaded once at startup
 is_indexing: bool = False
 
 def load_indices():
@@ -118,6 +124,23 @@ def load_indices():
 
     # Build indices if not present or loading failed
     return build_indices()
+
+def load_reranker():
+    """Load the cross-encoder reranker once at startup and reuse it for every
+    request. The model is independent of the search indices, so it is not
+    reloaded during index rebuilds."""
+    global reranker
+    if reranker is not None:
+        return True
+    try:
+        from reranking.reranker import BGEReranker
+        reranker = BGEReranker()
+        print("Loaded cross-encoder reranker")
+        return True
+    except Exception as e:
+        print(f"Warning: failed to load cross-encoder reranker: {e}")
+        reranker = None
+        return False
 
 def build_indices():
     """Build FAISS and BM25 indices from documents."""
@@ -205,6 +228,7 @@ async def startup_event():
     if not success:
         # Don't fail startup - allow manual index building
         print("Warning: Failed to load/build indices on startup")
+    load_reranker()
 
 @app.get("/health")
 async def health_check():
@@ -251,48 +275,58 @@ async def query_knowledge_base(request: QueryRequest):
             section_id = meta.get("section_id", "unknown")
             print(f"  {i+1}. score={score:.4f}, section_id={section_id}")
 
-        # Fuse results using RRF
-        fused = reciprocal_rank_fusion([dense_results, bm25_results], k=60)
+        # Fuse results using weighted RRF: dense is weighted higher than BM25
+        # and k is lowered to favour top ranks, so noisy sparse hits do not
+        # pollute the candidate set.
+        fused = reciprocal_rank_fusion(
+            [dense_results, bm25_results], k=20, weights=[0.7, 0.3]
+        )
         print("\n[DEBUG] RRF fused results (showing top 10):")
         for i, (chunk, score) in enumerate(fused[:10]):
             meta = getattr(chunk, "metadata", {})
             section_id = meta.get("section_id", "unknown")
             print(f"  {i+1}. score={score:.4f}, section_id={section_id}")
 
-        # Take top 5 for final consideration (based on RRF scores)
-        top_k = min(5, len(fused))
-        final_results = fused[:top_k]
-        print("\n[DEBUG] Final top-k results after RRF (top 5):")
-        for i, (chunk, rrf_score) in enumerate(final_results):
-            meta = getattr(chunk, "metadata", {})
-            section_id = meta.get("section_id", "unknown")
-            print(f"  {i+1}. RRF score={rrf_score:.4f}, section_id={section_id}")
-
         # Prepare maps for FAISS and optional reranker scores using stable keys
         # FAISS score map from dense_results
         print("\n[DEBUG] About to build faiss_score_map")
         faiss_score_map = {_chunk_key(chunk): score for chunk, score in dense_results}
         print("[DEBUG] Finished building faiss_score_map")
-        # Try to load reranker (cross-encoder) if available
-        rerank_score_map = {}
-        try:
-            print("\n[DEBUG] About to build rerank_score_map")
-            from reranking.reranker import BGEReranker
-            reranker = BGEReranker()
-            # Compute rerank scores for all fused results (to get score for each chunk)
-            reranked_all = reranker.rerank(request.question, fused, top_k=len(fused))
-            rerank_score_map = {_chunk_key(chunk): score for chunk, score in reranked_all}
-            print("[DEBUG] Finished building rerank_score_map")
-            print("\n[DEBUG] Cross-encoder reranker loaded and scores computed.")
-        except Exception as e:
-            # Reranker not available or failed to load
-            print(f"\n[DEBUG] Cross-encoder reranker not available: {e}")
-            rerank_score_map = {}
 
-        # Create list with FAISS, RRF, and verification scores for logging
+        # Cross-encoder reranking: its ordering becomes the FINAL ordering sent
+        # to the LLM (the RRF order above is only the candidate set). The
+        # reranker is loaded once at startup and reused across requests.
+        rerank_score_map = {}
+        if reranker is not None:
+            try:
+                print("\n[DEBUG] About to build rerank_score_map")
+                # Compute rerank scores for all fused results (to get score for each chunk)
+                reranked_all = reranker.rerank(request.question, fused, top_k=len(fused))
+                rerank_score_map = {_chunk_key(chunk): score for chunk, score in reranked_all}
+                print("[DEBUG] Finished building rerank_score_map")
+                print("\n[DEBUG] Cross-encoder reranker scores computed.")
+            except Exception as e:
+                # Reranker failed at query time: fall back to RRF ordering
+                print(f"\n[DEBUG] Cross-encoder reranker failed: {e}")
+                reranked_all = fused
+        else:
+            # Reranker not available (failed to load at startup): fall back to RRF ordering
+            print("\n[DEBUG] Cross-encoder reranker not available; using RRF ordering.")
+            reranked_all = fused
+
+        # Take top 5 for final consideration (based on reranker ordering)
+        top_k = min(5, len(reranked_all))
+        final_results = reranked_all[:top_k]
+        print("\n[DEBUG] Final top-k results after reranking (top 5):")
+        for i, (chunk, rerank_score) in enumerate(final_results):
+            meta = getattr(chunk, "metadata", {})
+            section_id = meta.get("section_id", "unknown")
+            print(f"  {i+1}. rerank score={rerank_score:.4f}, section_id={section_id}")
+
+        # Create list with FAISS, rerank, and verification scores for logging
         verification_scores = []
         print("\n[DEBUG] About to compute verification_results for logging")
-        for idx, (chunk, rrf_score) in enumerate(final_results):
+        for idx, (chunk, final_score) in enumerate(final_results):
             key = _chunk_key(chunk)
             faiss_score = faiss_score_map.get(key, 0.0)
             rerank_score = rerank_score_map.get(key, None)
@@ -301,13 +335,13 @@ async def query_knowledge_base(request: QueryRequest):
             verification_scores.append(v_score)
             meta = getattr(chunk, "metadata", {})
             section_id = meta.get("section_id", "unknown")
-            print(f"  {idx+1}. FAISS={faiss_score:.4f}, RRF={rrf_score:.4f}, Verif={v_score:.4f}, section_id={section_id}")
+            print(f"  {idx+1}. FAISS={faiss_score:.4f}, Final={final_score:.4f}, Verif={v_score:.4f}, section_id={section_id}")
         print("[DEBUG] Finished computing verification_results for logging")
 
-        # Create simplified cited sources for the answer (using RRF scores for ordering, but we keep chunk references)
+        # Create simplified cited sources for the answer (in final reranked order)
         cited_sources = [
-            create_simple_citation(chunk, rrf_score, idx)
-            for idx, (chunk, rrf_score) in enumerate(final_results)
+            create_simple_citation(chunk, final_score, idx)
+            for idx, (chunk, final_score) in enumerate(final_results)
         ]
 
         # ---------- Verification: single decision point ----------
@@ -416,6 +450,22 @@ Answer:
 
         processing_time_ms = int((time.time() - start_time) * 1000)
 
+        # Live telemetry for the frontend (all derived from this request/index)
+        retrieved_docs_count = len(cited_sources)
+        indexed_chunks_count = len(chunks_cache) if chunks_cache else 0
+        context_word_count = sum(
+            len(
+                ((getattr(chunk, "text", "") or "").split())
+            )
+            for chunk, _ in final_results
+        )
+        tokens_processed = context_word_count + len((answer or "").split()) + len((request.question or "").split())
+        rerank_model = (
+            "BGE-Reranker (cross-encoder)"
+            if rerank_score_map
+            else "Hybrid dense+BM25 (no cross-encoder)"
+        )
+
         # Build response
         return {
             "query": request.question,
@@ -431,7 +481,11 @@ Answer:
             "directiveRef": f"SYS-{int(time.time())}",
             "generatedAt": datetime.utcnow().isoformat() + "Z",
             "processingTimeMs": processing_time_ms,
-            "hallucinationRisk": "Low" if not cited_sources else "Zero"
+            "hallucinationRisk": "Low" if not cited_sources else "Zero",
+            "retrievedDocsCount": retrieved_docs_count,
+            "indexedChunksCount": indexed_chunks_count,
+            "tokensProcessed": tokens_processed,
+            "rerankModel": rerank_model
         }
 
     except Exception as e:

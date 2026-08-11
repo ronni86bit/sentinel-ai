@@ -27,7 +27,7 @@ export const PipelineInsights: React.FC<PipelineInsightsProps> = ({ stages, metr
   const [showAllStages, setShowAllStages] = useState(false);
   const [showSystemSpec, setShowSystemSpec] = useState(false);
 
-  const groundednessPct = ((metrics.groundednessScore ?? 0.994) * 100).toFixed(1);
+  const groundednessPct = ((metrics.groundednessScore ?? 0) * 100).toFixed(1);
   const confidencePct = (metrics.overallConfidence * 100).toFixed(1);
 
   const visibleStages = showAllStages ? stages : stages.slice(0, 4);
@@ -134,19 +134,19 @@ export const PipelineInsights: React.FC<PipelineInsightsProps> = ({ stages, metr
                 <div className="grid grid-cols-2 gap-1.5 pt-2 text-[10px] font-mono">
                   <div className="p-2 rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/80">
                     <span className="text-zinc-400 block">Indexed Chunks</span>
-                    <span className="font-bold text-zinc-800 dark:text-zinc-200">{metrics.indexedChunksCount.toLocaleString()}</span>
+                    <span className="font-bold text-zinc-800 dark:text-zinc-200">{metrics.indexedChunksCount ? metrics.indexedChunksCount.toLocaleString() : '—'}</span>
                   </div>
                   <div className="p-2 rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/80">
                     <span className="text-zinc-400 block">Similarity Thresh.</span>
-                    <span className="font-bold text-zinc-800 dark:text-zinc-200">{metrics.vectorSimilarityThreshold}</span>
+                    <span className="font-bold text-zinc-800 dark:text-zinc-200">{metrics.vectorSimilarityThreshold ? metrics.vectorSimilarityThreshold : '—'}</span>
                   </div>
                   <div className="p-2 rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/80">
                     <span className="text-zinc-400 block">Tokens Processed</span>
-                    <span className="font-bold text-zinc-800 dark:text-zinc-200">{metrics.tokensProcessed}</span>
+                    <span className="font-bold text-zinc-800 dark:text-zinc-200">{metrics.tokensProcessed ? metrics.tokensProcessed.toLocaleString() : '—'}</span>
                   </div>
                   <div className="p-2 rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/80">
                     <span className="text-zinc-400 block">Reranker Model</span>
-                    <span className="font-bold text-blue-600 dark:text-blue-400">Cohere-v3.5</span>
+                    <span className="font-bold text-blue-600 dark:text-blue-400">{metrics.rerankModel || '—'}</span>
                   </div>
                 </div>
               </motion.div>
@@ -203,7 +203,7 @@ export const PipelineInsights: React.FC<PipelineInsightsProps> = ({ stages, metr
                         </span>
                       </div>
                       <div className="flex items-center space-x-1.5 shrink-0 font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
-                        <span>{stage.latencyMs}ms</span>
+                        <span>{stage.latencyMs > 0 ? `${stage.latencyMs}ms` : '—'}</span>
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                       </div>
                     </button>

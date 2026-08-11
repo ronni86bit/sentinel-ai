@@ -60,6 +60,9 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
   const rawAiAnswer = report.aiAnswer || `${report.summary}\n\n` +
     report.sections.map(s => `${s.title}: ${s.content}`).join('\n\n');
 
+  // Number of retrieved passages the generated answer actually cited (e.g. FLOOD-2)
+  const citedCount = report.citations.filter((c) => c.isCited).length;
+
   // Streaming animation effect when searching
   useEffect(() => {
     if (isSearching) {
@@ -235,6 +238,11 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
               <span className="text-xs sm:text-sm font-bold text-zinc-800 dark:text-zinc-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                 Sources ({report.citations.length})
               </span>
+              {citedCount > 0 && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  {citedCount} cited in answer
+                </span>
+              )}
               <span className="text-xs text-zinc-400 hidden sm:inline">• Click to view retrieved documents, section IDs &amp; snippets</span>
             </div>
             <div className="flex items-center space-x-1 text-xs font-mono text-zinc-500 dark:text-zinc-400">
@@ -261,7 +269,9 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
                       "p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 group shadow-2xs",
                       activeCitationId === cit.id
                         ? "border-blue-500 bg-blue-50/20 dark:bg-blue-950/30 ring-2 ring-blue-500/20"
-                        : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-950/80 hover:border-blue-400 dark:hover:border-blue-600"
+                        : cit.isCited
+                          ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 hover:border-emerald-400 dark:hover:border-emerald-700"
+                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-950/80 hover:border-blue-400 dark:hover:border-blue-600"
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -280,6 +290,11 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
 
                     <div className="flex items-center space-x-2 text-[11px] font-mono text-blue-600 dark:text-blue-400 font-semibold">
                       <span>Section: {cit.sectionId}</span>
+                      {cit.isCited && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[9px] font-sans font-semibold">
+                          Cited in answer
+                        </span>
+                      )}
                       {cit.pageNumber && <span className="text-zinc-400 font-normal">• p. {cit.pageNumber}</span>}
                       {cit.sourceType && <span className="text-zinc-400 font-normal hidden sm:inline">• {cit.sourceType}</span>}
                     </div>
@@ -525,7 +540,9 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
                       'p-3.5 rounded-xl border transition-all bg-white dark:bg-zinc-950 flex flex-col justify-between space-y-2.5 shadow-2xs group',
                       isSelected 
                         ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20 dark:bg-blue-950/30' 
-                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                        : cit.isCited
+                          ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 hover:border-emerald-400 dark:hover:border-emerald-700'
+                          : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
                     )}
                   >
                     {/* Top row */}
@@ -540,6 +557,11 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
                           </h4>
                           <div className="flex items-center space-x-2 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
                             <span className="text-blue-600 dark:text-blue-400 font-semibold">{cit.sectionId}</span>
+                            {cit.isCited && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[9px] font-sans font-semibold">
+                                Cited
+                              </span>
+                            )}
                             {cit.pageNumber && (
                               <>
                                 <span>•</span>
@@ -688,10 +710,10 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
                   <span>Total Latency</span>
                 </div>
                 <div className="text-xl font-bold font-mono text-zinc-900 dark:text-zinc-100">
-                  422 ms
+                  {report.processingTimeMs} ms
                 </div>
                 <div className="text-[10px] text-zinc-400 font-mono">
-                  82ms Retrieval • 340ms LLM
+                  {report.retrievedDocsCount ?? report.citations.length} docs retrieved • API response
                 </div>
               </div>
 
@@ -705,7 +727,7 @@ export const GroundedReportView: React.FC<GroundedReportProps> = ({
                   {report.hallucinationRisk}
                 </div>
                 <div className="text-[10px] text-zinc-400 font-mono">
-                  Zero unverified claims
+                  {report.citationCount} cited passages
                 </div>
               </div>
             </div>

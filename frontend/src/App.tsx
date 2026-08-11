@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ActiveTab, ChatMessage, Conversation } from './types';
-import { MOCK_REPORTS } from './data/mockData';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { SearchWorkspace } from './components/SearchWorkspace';
@@ -102,16 +101,11 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Find citation object for modal
+  // Find citation object for modal (only from live /query API conversation data)
   const activeModalCitation = modalCitationId
     ? activeConversation?.messages
         .flatMap((m) => m.report?.citations || [])
-        .find((c) => c.id === modalCitationId) ||
-      MOCK_REPORTS.q1.citations.find((c) => c.id === modalCitationId) ||
-      MOCK_REPORTS.q2.citations.find((c) => c.id === modalCitationId) ||
-      MOCK_REPORTS.q3.citations.find((c) => c.id === modalCitationId) ||
-      MOCK_REPORTS.q4.citations.find((c) => c.id === modalCitationId) ||
-      null
+        .find((c) => c.id === modalCitationId) || null
     : null;
 
   return (

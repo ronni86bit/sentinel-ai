@@ -20,6 +20,7 @@ interface EvidencePanelProps {
   activeCitationId: string | null;
   onSelectCitation: (citationId: string) => void;
   onOpenModal: (citationId: string) => void;
+  rerankModel?: string;
 }
 
 export const EvidencePanel: React.FC<EvidencePanelProps> = ({
@@ -27,6 +28,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
   activeCitationId,
   onSelectCitation,
   onOpenModal,
+  rerankModel,
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
   const [expandedCardIds, setExpandedCardIds] = useState<Record<string, boolean>>({});
@@ -42,6 +44,14 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
     c.sectionId.toLowerCase().includes(filterQuery.toLowerCase())
   );
 
+  // Prioritize the passages the generated answer actually cited (e.g. FLOOD-2)
+  // so they appear above retrieved passages that only ranked well at retrieval.
+  const orderedCitations = [...filteredCitations].sort(
+    (a, b) => (b.isCited ? 1 : 0) - (a.isCited ? 1 : 0)
+  );
+
+  const citedCount = citations.filter((c) => c.isCited).length;
+
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xs overflow-hidden shrink-0 flex flex-col max-h-[380px]">
       {/* Header */}
@@ -54,9 +64,14 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono font-semibold">
             {citations.length} Cards
           </span>
+          {citedCount > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-mono font-semibold">
+              {citedCount} Cited
+            </span>
+          )}
         </div>
         <span className="text-[11px] font-mono text-zinc-400 dark:text-zinc-500">
-          Cohere Rerank Top-K
+          {rerankModel || 'Reranked passages'}
         </span>
       </div>
 
@@ -81,7 +96,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
             No matching evidence found.
           </div>
         ) : (
-          filteredCitations.map((cit) => {
+          orderedCitations.map((cit) => {
             const isSelected = activeCitationId === cit.id;
             const isExpanded = !!expandedCardIds[cit.id];
 
@@ -116,7 +131,14 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
                       </h4>
                     </div>
                     <div className="flex items-center space-x-2 text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">
-                      <span>{cit.sectionId}</span>
+                      <span className={cn(cit.isCited && 'font-bold text-emerald-600 dark:text-emerald-400')}>
+                        {cit.sectionId}
+                      </span>
+                      {cit.isCited && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[9px] font-semibold font-sans">
+                          Cited in answer
+                        </span>
+                      )}
                       {cit.pageNumber && (
                         <>
                           <span>•</span>

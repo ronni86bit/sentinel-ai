@@ -2,6 +2,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '../lib/utils';
 import { Citation } from '../types';
+import { cleanToken, findMatchingCitation } from '../lib/citations';
 
 interface MarkdownRendererProps {
   content: string;
@@ -26,12 +27,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     return parts.map((part, index) => {
       if (part.startsWith('[') && part.endsWith(']')) {
         const citationContent = part.slice(1, -1);
-        
-        const matchedCit = citations.find(c => 
-          c.sectionId.toLowerCase().includes(citationContent.toLowerCase()) ||
-          citationContent.toLowerCase().includes(c.sectionId.toLowerCase()) ||
-          c.id.toLowerCase() === citationContent.toLowerCase()
-        ) || (citations.length > 0 ? citations[index % citations.length] : null);
+        const clean = cleanToken(citationContent);
+
+        const matchedCit = clean
+          ? findMatchingCitation(citations, clean)
+          : undefined;
 
         const isSelected = matchedCit && activeCitationId === matchedCit.id;
 
@@ -48,9 +48,12 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               'inline-flex items-center space-x-0.5 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-mono font-semibold transition-all cursor-pointer border',
               isSelected
                 ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-500/30'
-                : 'bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900'
+                : matchedCit
+                  ? 'bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'
             )}
             title={matchedCit ? `View source: ${matchedCit.docTitle}` : 'Click to inspect citation'}
+            disabled={!matchedCit}
           >
             <span>{part}</span>
           </button>

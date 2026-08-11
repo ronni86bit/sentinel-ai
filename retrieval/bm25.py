@@ -11,6 +11,7 @@ Only retrieval is performed – no re-ranking, no answer generation.
 """
 
 import pickle
+import re
 from pathlib import Path
 from typing import List, Tuple, Any
 import logging
@@ -25,6 +26,21 @@ except ImportError as e:  # pragma: no cover
     raise
 
 logger = logging.getLogger(__name__)
+
+
+# Small set of English function words dropped during tokenization. Disaster
+# terms (e.g. "flood", "storm") are deliberately NOT included so the sparse
+# retriever can still match them.
+STOPWORDS: frozenset = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
+    "can", "could", "did", "do", "does", "during", "for", "from",
+    "had", "has", "have", "he", "her", "his", "how", "i", "if", "in",
+    "is", "it", "its", "may", "me", "my", "no", "not", "of", "on",
+    "or", "our", "should", "so", "than", "that", "the", "their",
+    "there", "these", "they", "this", "to", "was", "we", "were",
+    "what", "when", "which", "who", "will", "with", "would", "you",
+    "your",
+})
 
 
 class BM25Retriever:
@@ -60,11 +76,13 @@ class BM25Retriever:
     @staticmethod
     def _tokenize(text: str) -> List[str]:
         """
-        Very simple tokenizer: lower‑case and split on whitespace.
-        For a production system you might want to use a more sophisticated
-        tokenizer (e.g., NLTK, spaCy) but this keeps the dependency list short.
+        Tokenizer for BM25: lower‑cases, normalises punctuation (so
+        "hurricane," and "hurricane" are the same token), and drops English
+        stopwords and single‑character tokens so that high‑frequency function
+        words do not dominate the sparse scores.
         """
-        return text.lower().split()
+        tokens = re.findall(r"[a-z0-9]+", text.lower())
+        return [t for t in tokens if t not in STOPWORDS and len(t) > 1]
 
     def get_scores(self, query: str) -> List[float]:
         """

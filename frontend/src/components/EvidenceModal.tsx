@@ -91,7 +91,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({ citation, onClose 
           {/* Full Content Box */}
           <div className="space-y-2">
             <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
-              Extracted 1,024-Token Passage Context
+              Retrieved Passage Context
             </span>
             <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm leading-relaxed text-zinc-800 dark:text-zinc-200 font-sans whitespace-pre-line">
               {citation.fullContent}

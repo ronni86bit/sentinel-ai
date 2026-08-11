@@ -169,8 +169,10 @@ def retrieve_with_understanding(
     dense_final = _maybe_fallback(dense_raw, dense_boosted, is_dense=True)
     bm25_final = _maybe_fallback(bm25_raw, bm25_boosted, is_dense=False)
 
-    # 5️⃣ Fuse with RRF
-    fused = reciprocal_rank_fusion([dense_final, bm25_final], k=60)
+    # 5️⃣ Fuse with weighted RRF (dense weighted higher to dampen noisy BM25)
+    fused = reciprocal_rank_fusion(
+        [dense_final, bm25_final], k=20, weights=[0.7, 0.3]
+    )
 
     # Return top k
     return fused[:k]

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GroundedReport, ChatMessage, PipelineMetrics } from '../types';
-import { MOCK_REPORTS, INITIAL_PIPELINE_STAGES } from '../data/mockData';
+import { ChatMessage, PipelineMetrics, PipelineStage } from '../types';
+import { queryApi } from '../lib/api';
 import { GroundedReportView } from './GroundedReport';
 import { EvidencePanel } from './EvidencePanel';
 import { PipelineInsights } from './PipelineInsights';
@@ -72,22 +72,64 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
   const activeReport = [...messages].reverse().find(m => m.role === 'assistant' && m.report)?.report || null;
 
   const activeMetrics: PipelineMetrics = activeReport ? {
-    totalLatencyMs: activeReport.processingTimeMs || 124,
-    overallConfidence: activeReport.confidenceScore || 0.987,
-    groundednessScore: activeReport.groundednessScore || 0.994,
-    retrievedDocsCount: activeReport.citations?.length || 0,
-    indexedChunksCount: 14280,
-    vectorSimilarityThreshold: 0.82,
-    tokensProcessed: 1420
+    totalLatencyMs: activeReport.processingTimeMs || 0,
+    overallConfidence: activeReport.confidenceScore || 0,
+    groundednessScore: activeReport.groundednessScore || 0,
+    retrievedDocsCount: activeReport.retrievedDocsCount ?? activeReport.citations?.length ?? 0,
+    indexedChunksCount: activeReport.indexedChunksCount || 0,
+    vectorSimilarityThreshold: activeReport.vectorSimilarityThreshold || 0,
+    tokensProcessed: activeReport.tokensProcessed || 0,
+    rerankModel: activeReport.rerankModel || ''
   } : {
     totalLatencyMs: 0,
-    overallConfidence: 1.0,
-    groundednessScore: 1.0,
+    overallConfidence: 0,
+    groundednessScore: 0,
     retrievedDocsCount: 0,
-    indexedChunksCount: 14280,
-    vectorSimilarityThreshold: 0.82,
-    tokensProcessed: 0
+    indexedChunksCount: 0,
+    vectorSimilarityThreshold: 0,
+    tokensProcessed: 0,
+    rerankModel: ''
   };
+
+  // Pipeline telemetry is derived entirely from the live /query API response.
+  const activeStages: PipelineStage[] = activeReport ? [
+    {
+      id: 'api-retrieval',
+      name: 'Document Retrieval & Verification',
+      status: 'completed' as const,
+      latencyMs: 0,
+      details: `${activeReport.retrievedDocsCount ?? activeReport.citations.length} document passage(s) retrieved and verified against the query.`,
+      metrics: {
+        RetrievedDocs: activeReport.retrievedDocsCount ?? activeReport.citations.length,
+        Citations: activeReport.citations.length,
+        Confidence: `${(activeReport.confidenceScore * 100).toFixed(1)}%`
+      }
+    },
+    {
+      id: 'api-synthesis',
+      name: 'Grounded Answer Synthesis',
+      status: 'completed' as const,
+      latencyMs: 0,
+      details: `Answer synthesized from supplied evidence with groundedness score ${(activeReport.groundednessScore * 100).toFixed(1)}% and ${activeReport.hallucinationRisk} hallucination risk.`,
+      metrics: {
+        Groundedness: `${(activeReport.groundednessScore * 100).toFixed(1)}%`,
+        DirectiveRef: activeReport.directiveRef,
+        Risk: activeReport.hallucinationRisk
+      }
+    },
+    {
+      id: 'api-latency',
+      name: 'End-to-End API Processing',
+      status: 'completed' as const,
+      latencyMs: activeReport.processingTimeMs,
+      details: `Total request processing time for /api/query (${activeReport.generatedAt}).`,
+      metrics: {
+        Processing: `${activeReport.processingTimeMs} ms`,
+        GeneratedAt: activeReport.generatedAt,
+        Authority: activeReport.verifiedAuthority
+      }
+    }
+  ] : [];
 
   const retrievalSteps = [
     { label: 'Query', desc: 'Tokenize' },
@@ -115,7 +157,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
   ];
 
   // Handle Search Execution
-  const handlePerformSearch = (searchQuery: string) => {
+  const handlePerformSearch = async (searchQuery: string) => {
     if (!searchQuery.trim() || isSearching) return;
 
     const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -162,69 +204,12 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
       }
     }, 320);
 
-    setTimeout(() => {
+    try {
+      // Query the live backend /query API
+      const finalReport = await queryApi(searchQuery);
+
       clearInterval(stepInterval);
       setActiveStepIndex(6);
-
-      // Find matching mock report or synthesize fallback
-      const matchKey = Object.keys(MOCK_REPORTS).find(key => 
-        searchQuery.toLowerCase().includes(MOCK_REPORTS[key].query.toLowerCase().slice(0, 15)) ||
-        MOCK_REPORTS[key].query.toLowerCase().includes(searchQuery.toLowerCase().slice(0, 15))
-      );
-
-      let finalReport: GroundedReport;
-
-      if (matchKey && MOCK_REPORTS[matchKey]) {
-        finalReport = { ...MOCK_REPORTS[matchKey], query: searchQuery };
-      } else {
-        // Create dynamic grounded report for custom user input!
-        finalReport = {
-          query: searchQuery,
-          title: `Grounded Protocol Directive: ${searchQuery}`,
-          summary: `Synthesized under FEMA National Response Framework Directive 2025. Standard operating procedures compiled for: "${searchQuery}". Fully grounded across verified federal emergency documentation.`,
-          confidenceScore: 0.987,
-          groundednessScore: 0.994,
-          citationCount: 4,
-          verifiedAuthority: 'FEMA & Department of Homeland Security Emergency Operations',
-          directiveRef: `SOP-CUSTOM-${Math.floor(Math.random() * 9000 + 1000)}`,
-          generatedAt: new Date().toISOString(),
-          processingTimeMs: 124,
-          hallucinationRisk: 'Zero',
-          citations: MOCK_REPORTS.q1.citations,
-          aiAnswer: `### Operational Directive for "${searchQuery}"
-
-Here are the standard operating procedures synthesized from verified federal disaster guidelines:
-
-1. **Unified Incident Command Activation (T-0 Hours):** Immediately deploy incident command structures (ICS-400) and establish satellite failover links across state and local Emergency Operations Centers [Section 4.2.1].
-
-2. **Tactical Perimeter & Safety Standards:** Emergency personnel entering forward zones must maintain strict PPE compliance and continuous atmospheric monitoring [Subpart H • PPE Selection].
-
-3. **Mass Evacuation & Staging Protocols:** Pre-position search & rescue assets outside primary hazard zones with 72-hour autonomous energy and water supply [Chapter 3 • Shelter Capacity].
-
-4. **Inter-Agency Data Relay:** Synchronize real-time telemetry across Wireless Emergency Alerts (WEA) and GIS spatial overlays every 15 minutes [Annex B • Traffic Control].`,
-          sections: [
-            {
-              title: '1. Primary Operational Response & Command Hierarchy',
-              content: `Initial operational response to "${searchQuery}" requires immediate activation of local Emergency Operations Centers (EOC) under Incident Command System (ICS-400) guidelines.`,
-              bulletPoints: [
-                'Establish unified multi-agency command post within 30 minutes of incident declaration.',
-                'Deploy tactical communications trailers with satellite failover links.',
-                'Authorize emergency expenditure funds under Stafford Act Emergency Provisions.'
-              ],
-              citations: ['cit-1', 'cit-2']
-            },
-            {
-              title: '2. Field Safety Protocols & Resource Allocation',
-              content: 'Emergency personnel must enforce strict site perimeter security and ensure all forward units are outfitted with mission-appropriate safety gear.',
-              bulletPoints: [
-                'Continuous atmospheric and environmental monitoring at forward operating bases.',
-                'Staged rotation of search crews every 4 hours to prevent operational fatigue.'
-              ],
-              citations: ['cit-3', 'cit-4']
-            }
-          ]
-        };
-      }
 
       const finalAssistantMsg: ChatMessage = {
         id: assistantMsgId,
@@ -241,7 +226,26 @@ Here are the standard operating procedures synthesized from verified federal dis
 
       setActiveCitationId(finalReport.citations[0]?.id || null);
       setIsSearching(false);
-    }, 1400);
+    } catch (err) {
+      clearInterval(stepInterval);
+      setActiveStepIndex(6);
+
+      const errorDetail = err instanceof Error ? err.message : 'Unknown error';
+      const errorMsg: ChatMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: `The query could not be completed by the /api/query backend. ${errorDetail}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isStreaming: false
+      };
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMsgId ? errorMsg : m))
+      );
+
+      setActiveCitationId(null);
+      setIsSearching(false);
+    }
   };
 
   const handleNewConversation = () => {
@@ -541,9 +545,10 @@ Here are the standard operating procedures synthesized from verified federal dis
           activeCitationId={activeCitationId}
           onSelectCitation={(citId) => setActiveCitationId(citId)}
           onOpenModal={onOpenCitationModal}
+          rerankModel={activeReport?.rerankModel}
         />
         <PipelineInsights
-          stages={INITIAL_PIPELINE_STAGES}
+          stages={activeStages}
           metrics={activeMetrics}
         />
       </div>
@@ -573,16 +578,17 @@ Here are the standard operating procedures synthesized from verified federal dis
                   onOpenCitationModal(citId);
                   setMobileEvidenceOpen(false);
                 }}
+                rerankModel={activeReport?.rerankModel}
               />
-              <PipelineInsights
-                stages={INITIAL_PIPELINE_STAGES}
+<PipelineInsights
+                stages={activeStages}
                 metrics={activeMetrics}
               />
             </div>
           </div>
         </div>
       )}
-    </div>
+      </div>
   );
 };
 

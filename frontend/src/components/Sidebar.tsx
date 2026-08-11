@@ -133,12 +133,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span>Clearance Level 4</span>
               </div>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-normal">
+<p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-normal">
                 Directives indexed from official FEMA, WHO & EPA vector clusters.
               </p>
               <div className="pt-1 flex items-center justify-between text-[10px] font-mono text-zinc-400 dark:text-zinc-500 border-t border-zinc-200/60 dark:border-zinc-800/60">
-                <span>RERANK: Cohere v3</span>
-                <span className="text-emerald-600 dark:text-emerald-400">99.4%</span>
+                <span>API: /api/query</span>
               </div>
             </div>
           ) : (

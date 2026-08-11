@@ -58,7 +58,8 @@ def _make_chunk_key(chunk: Any) -> str:
 
 def reciprocal_rank_fusion(
     runs: List[List[Tuple[Any, float]]],
-    k: int = 60,
+    k: int = 20,
+    weights: List[float] | None = None,
 ) -> List[Tuple[Any, float]]:
     """
     Fuse multiple ranked lists using Reciprocal Rank Fusion.
@@ -67,14 +68,26 @@ def reciprocal_rank_fusion(
         runs: A list of ranked lists. Each inner list contains tuples
               ``(chunk, score)`` sorted by descending original score (the
               original score is ignored for RRF; only the rank matters).
-        k: The constant in the RRF formula (default 60). Common values in
-           the literature are 60 or 10.
+        k: The constant in the RRF formula (default 20). Common values in
+           the literature are 60 or 10; a smaller k (e.g. 10-20) emphasises
+           the top ranks of each run and suppresses long‑tail noise.
+        weights: Optional per‑run weighting applied to each run's RRF
+                 contribution (same length as ``runs``). If None, all runs
+                 are weighted equally. Weighting a noisy run lower (e.g. BM25
+                 at 0.3) prevents it from polluting the fused ranking.
 
     Returns:
         A list of tuples ``(chunk, rrf_score)`` sorted by descending RRF score.
     """
     if not runs:
         return []
+
+    if weights is None:
+        weights = [1.0] * len(runs)
+    elif len(weights) != len(runs):
+        raise ValueError(
+            f"weights length {len(weights)} does not match runs length {len(runs)}"
+        )
 
     # Maps chunk key -> (chunk object, accumulated rrf score)
     key_to_chunk: Dict[str, Any] = {}
@@ -83,13 +96,14 @@ def reciprocal_rank_fusion(
     for run_idx, run in enumerate(runs):
         if not run:
             continue
+        run_weight = weights[run_idx]
         for rank, (chunk, _) in enumerate(run, start=1):  # rank starts at 1
             key = _make_chunk_key(chunk)
             # Store the chunk object the first time we see it
             if key not in key_to_chunk:
                 key_to_chunk[key] = chunk
-            # Accumulate the RRF contribution
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank)
+            # Accumulate the (weighted) RRF contribution
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + run_weight * (1.0 / (k + rank))
 
     # Sort keys by descending RRF score
     sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
@@ -106,7 +120,8 @@ def reciprocal_rank_fusion(
 def fuse_dense_and_bm25(
     dense_results: List[Tuple[Any, float]],
     bm25_results: List[Tuple[Any, float]],
-    k: int = 60,
+    k: int = 20,
+    weights: List[float] | None = None,
 ) -> List[Tuple[Any, float]]:
     """
     Convenience function to fuse dense (FAISS) and BM25 retrieval results.
@@ -115,11 +130,15 @@ def fuse_dense_and_bm25(
         dense_results: Output from a dense retriever (list of (chunk, score)).
         bm25_results: Output from a BM25 retriever (list of (chunk, score)).
         k: RRF constant.
+        weights: Optional per‑run weights, e.g. ``[0.7, 0.3]`` to dampen the
+                 noisier BM25 run (dense first, BM25 second).
 
     Returns:
         Fused ranking as list of (chunk, rrf_score).
     """
-    return reciprocal_rank_fusion([dense_results, bm25_results], k=k)
+    return reciprocal_rank_fusion(
+        [dense_results, bm25_results], k=k, weights=weights
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
