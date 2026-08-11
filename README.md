@@ -1,3 +1,7 @@
+# SentinelAI
+
+Grounded emergency-response RAG assistant using hybrid retrieval and Llama 3.3.
+
 # Project 5: RAG Assistant for Disaster Management Guidelines
 
 ## Candidate Task
